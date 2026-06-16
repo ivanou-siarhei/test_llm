@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Low-Poly Mage</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; background: #0a0014; font-family: sans-serif; }
+        canvas { display: block; }
+        #info {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #7fffe0;
+            text-shadow: 0 0 10px #00ffff;
+            font-size: 14px;
+            pointer-events: none;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+<div id="info">Click anywhere to cast magic</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function() {
+    'use strict';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0014);
+    scene.fog = new THREE.FogExp2(0x0a0014, 0.04);
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 2.5, 7);
+    camera.lookAt(0, 1.5, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    const ambientLight = new THREE.AmbientLight(0x6644aa, 0.5);
+    scene.add(ambientLight);
+
+    const mainLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    mainLight.position.set(5, 10, 5);
+    mainLight.castShadow = true;
+    mainLight.shadow.mapSize.width = 1024;
+    mainLight.shadow.mapSize.height = 1024;
+    scene.add(mainLight);
+
+    const fillLight = new THREE.PointLight(0x00ffff, 0.4, 15);
+    fillLight.position.set(-3, 3, -2);
+    scene.add(fillLight);
+
+    const rimLight = new THREE.PointLight(0x8800ff, 0.3, 12);
+    rimLight.position.set(2, 4, -3);
+    scene.add(rimLight);
+
+    const floorGeometry = new THREE.PlaneGeometry(30, 30, 20, 20);
+    const floorMaterial = new THREE.MeshLambertMaterial({
+        color: 0x1a0033,
+        flatShading: true
+    });
+    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    for (let i = 0; i < floorGeometry.attributes.position.count; i++) {
+        const x = floorGeometry.attributes.position.getX(i);
+        const y = floorGeometry.attributes.position.getY(i);
+        const z = Math.sin(x * 0.5) * Math.cos(y * 0.5) * 0.1;
+        floorGeometry.attributes.position.setZ(i, z);
+    }
+    floorGeometry.computeVertexNormals();
+
+    const floorLinesGeometry = new THREE.BufferGeometry();
+    const linePositions = [];
+    const gridSize = 30;
+    const divisions = 15;
+    const step = gridSize / divisions;
+    for (let i = -gridSize/2; i <= gridSize/2; i += step) {
+        linePositions.push(i, 0.01, -gridSize/2, i, 0.01, gridSize/2);
+        linePositions.push(-gridSize/2, 0.01, i, gridSize/2, 0.01, i);
+    }
+    floorLinesGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+    const floorLines = new THREE.LineSegments(
+        floorLinesGeometry,
+        new THREE.LineBasicMaterial({ color: 0x4400aa, transparent: true, opacity: 0.3 })
+    );
+    scene.add(floorLines);
+
+    function createMage() {
+        const mage = new THREE.Group();
+
+        function mesh(geometry, color, castShadow = true) {
+            const mat = new THREE.MeshStandardMaterial({
+                color: color,
+                flatShading: true,
+                roughness: 0.8,
+                metalness: 0.1
+            });
+            const m = new THREE.Mesh(geometry, mat);
+            m.castShadow = castShadow;
+            return m;
+        }
+
+        const bodyGeo = new THREE.CylinderGeometry(0.35, 0.5, 1.2, 6);
+        const body = mesh(bodyGeo, 0x5a1a8a);
+        body.position.y = 1.1;
+        mage.add(body);
+
+        const headGeo = new THREE.IcosahedronGeometry(0.28, 1);
+        const head = mesh(headGeo, 0xffcc99);
+        head.position.y = 2.0;
+        mage.add(head);
+
+        const hatConeGeo = new THREE.ConeGeometry(0.32, 0.9, 4);
+        const hat = mesh(hatConeGeo, 0x2a0050);
+        hat.position.y = 2.7;
+        hat.rotation.y = Math.PI / 4;
+        mage.add(hat);
+
+        const brimGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.06, 8);
+        const brim = mesh(brimGeo, 0x1a0035);
+        brim.position.y = 2.3;
+        mage.add(brim);
+
+        const robeGeo = new THREE.ConeGeometry(0.75, 1.5, 5, 1);
+        const robe = mesh(robeGeo, 0x6a2a9a);
+        robe.position.y = 0.3;
+        robe.rotation.x = Math.PI;
+        mage.add(robe);
+
+        const sashGeo = new THREE.TorusGeometry(0.52, 0.06, 6, 8);
+        const sash = mesh(sashGeo, 0x00ffcc);
+        sash.position.y = 1.0;
+        sash.rotation.x = Math.PI / 2;
+        mage.add(sash);
+
+        const staffGroup = new THREE.Group();
+        staffGroup.position.set(0.65, 1.2, 0.2);
+
+        const staffStickGeo = new THREE.CylinderGeometry(0.04, 0.05, 1.6, 6);
+        const staffStick = mesh(staffStickGeo, 0x3a1a4a);
+        staffStick.position.y = 0.5;
+        staffGroup.add(staffStick);
+
+        const crystalGeo = new THREE.OctahedronGeometry(0.15, 0);
+        const crystalMat = new THREE.MeshStandardMaterial({
+            color: 0x00ffff,
+            emissive: 0x004444,
+            flatShading: true,
+            transparent: true,
+            opacity: 0.9
+        });
+        const crystal = new THREE.Mesh(crystalGeo, crystalMat);
+        crystal.position.y = 1.35;
+        staffGroup.add(crystal);
+
+        const glowLight = new THREE.PointLight(0x00ffff, 0.5, 2);
+        glowLight.position.y = 1.35;
+        staffGroup.add(glowLight);
+
+        mage.add(staffGroup);
+
+        mage.castShadow = true;
+        return { mage, staffGroup, crystal, crystalMat, glowLight };
+    }
+
+    const { mage, staffGroup, crystal, crystalMat, glowLight } = createMage();
+    scene.add(mage);
+
+    class Particle {
+        constructor(position, velocity, color, life) {
+            const geo = new THREE.SphereGeometry(0.06, 4, 4);
+            const mat = new THREE.MeshBasicMaterial({
+                color: color,
+                transparent: true
+            });
+            this.mesh = new THREE.Mesh(geo, mat);
+            this.mesh.position.copy(position);
+            this.velocity = velocity.clone();
+            this.life = life;
+            this.maxLife = life;
+            scene.add(this.mesh);
+        }
+
+        update(dt) {
+            this.velocity.y -= dt * 0.5;
+            this.mesh.position.addScaledVector(this.velocity, dt);
+            this.life -= dt;
+            const t = this.life / this.maxLife;
+            this.mesh.material.opacity = t;
+            this.mesh.scale.setScalar(0.5 + t * 0.5);
+            return this.life > 0;
+        }
+
+        dispose() {
+            scene.remove(this.mesh);
+            this.mesh.geometry.dispose();
+            this.mesh.material.dispose();
+        }
+    }
+
+    let particles = [];
+
+    function castMagic() {
+        const origin = new THREE.Vector3();
+        staffGroup.getWorldPosition(origin);
+        origin.y += 1.35;
+
+        glowLight.intensity = 3;
+
+        for (let i = 0; i < 40; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 1.5 + Math.random() * 3;
+            const vy = 1 + Math.random() * 3;
+            const vx = Math.cos(angle) * speed;
+            const vz = Math.sin(angle) * speed;
+            const velocity = new THREE.Vector3(vx, vy, vz);
+            const color = Math.random() > 0.5 ? 0x00ffff : 0xaa44ff;
+            const life = 0.8 + Math.random() * 0.8;
+            particles.push(new Particle(origin.clone(), velocity, color, life));
+        }
+    }
+
+    window.addEventListener('click', castMagic);
+    window.addEventListener('touchstart', castMagic);
+
+    const clock = new THREE.Clock();
+
+    function animate() {
+        requestAnimationFrame(animate);
+
+        const dt = Math.min(clock.getDelta(), 0.05);
+        const elapsed = clock.getElapsedTime();
+
+        const breath = Math.sin(elapsed * 1.5) * 0.02;
+        mage.scale.set(1 + breath, 1 - breath * 0.5, 1 + breath);
+
+        const sway = Math.sin(elapsed * 0.8) * 0.08;
+        staffGroup.rotation.z = sway;
+        staffGroup.rotation.x = Math.sin(elapsed * 0.6) * 0.04;
+
+        const crystalRot = elapsed * 2;
+        crystal.rotation.y = crystalRot;
+        crystal.rotation.x = crystalRot * 0.7;
+
+        const pulse = 0.5 + Math.sin(elapsed * 3) * 0.3;
+        crystalMat.emissive.setRGB(0, pulse * 0.3, pulse * 0.3);
+        glowLight.intensity = Math.max(0.5, glowLight.intensity - dt * 4);
+
+        for (let i = particles.length - 1; i >= 0; i--) {
+            if (!particles[i].update(dt)) {
+                particles[i].dispose();
+                particles.splice(i, 1);
+            }
+        }
+
+        camera.position.x = Math.sin(elapsed * 0.15) * 0.5;
+        camera.lookAt(0, 1.5, 0);
+
+        renderer.render(scene, camera);
+    }
+
+    animate();
+
+    function onResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    window.addEventListener('resize', onResize);
+
+})();
+</script>
+</body>
+</html>
