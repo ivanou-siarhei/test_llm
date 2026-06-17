@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Low-Poly Mage Character - Mage.js</title>
+    <style>
+        html,body{margin:0;padding:0;overflow:hidden;background:#0a0a1a;height:100%;width:100%}
+        canvas{display:block;width:100%;height:100%}
+        #info{position:absolute;top:10px;left:10px;color:#00ffff;font-family:sans-serif;font-size:14px;pointer-events:none;text-shadow:0 0 10px #00aaaa}
+    </style>
+</head>
+<body>
+<div id="info">Click anywhere to cast magic</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.126.0/build/three.min.js"></script>
+<script>
+class MageLevel {
+    constructor() {
+        this.time = 0;
+        this.isCasting = false;
+        this.castTimer = 0;
+
+        this.colors = {
+            hat: 0x4a1a7a,
+            hatBrim: 0x2a0a5a,
+            robe: 0x1a0a3a,
+            robeHighlight: 0x2a1a5a,
+            skin: 0x8a6a4a,
+            staff: 0x5a4a3a,
+            magic: 0x00ffff,
+            magicCore: 0x00aaff
+        };
+
+        this.initEngine();
+        this.createLights();
+        this.createFloor();
+        this.createMage();
+        this.createParticleSystem();
+        this.setupEventListeners();
+        this.animate();
+    }
+
+    initEngine() {
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 200);
+        this.camera.position.set(0, 15, 40);
+
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.setClearColor(0x0a0a1a);
+        document.body.appendChild(this.renderer.domElement);
+
+        this.camera.lookAt(0, 10, 0);
+    }
+
+    createLights() {
+        const ambient = new THREE.AmbientLight(0x3a3a5a, 0.4);
+        this.scene.add(ambient);
+
+        this.pointLight = new THREE.PointLight(0x00ffff, 1.5, 100);
+        this.pointLight.position.set(15, 25, 15);
+        this.scene.add(this.pointLight);
+
+        const pointLight2 = new THREE.PointLight(0xff66aa, 0.8, 100);
+        pointLight2.position.set(-15, 20, -15);
+        this.scene.add(pointLight2);
+
+        const hemi = new THREE.HemisphereLight(0x4a2a6a, 0x1a0a2a, 0.3);
+        this.scene.add(hemi);
+    }
+
+    createFloor() {
+        const floorGeo = new THREE.PlaneGeometry(300, 300, 50, 50);
+        const floorMat = new THREE.MeshBasicMaterial({
+            color: 0x0a0a1a,
+            wireframe: true,
+            opacity: 0.15
+        });
+        floorMat.transparent = true;
+        this.floorGrid = new THREE.Mesh(floorGeo, floorMat);
+        this.floorGrid.rotation.x = -Math.PI / 2;
+        this.scene.add(this.floorGrid);
+
+        const floorGeo2 = new THREE.PlaneGeometry(300, 300);
+        const floorMat2 = new THREE.MeshBasicMaterial({ color: 0x1a1a2a });
+        const floor = new THREE.Mesh(floorGeo2, floorMat2);
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = -0.5;
+        this.scene.add(floor);
+    }
+
+    createMage() {
+        this.mage = new THREE.Group();
+        this.scene.add(this.mage);
+
+        this.hat = this.createHat();
+        this.head = this.createHead();
+        this.body = this.createBody();
+        this.arms = this.createArms();
+        this.staff = this.createStaff();
+
+        this.mage.add(this.hat, this.head, this.body, this.arms, this.staff);
+        this.mage.position.y = 0;
+    }
+
+    createHat() {
+        const hatGroup = new THREE.Group();
+
+        const brimGeo = new THREE.CylinderGeometry(0, 5, 1, 6, 1, false);
+        const brimMat = new THREE.MeshLambertMaterial({ color: this.colors.hatBrim, flatShading: true });
+        const brim = new THREE.Mesh(brimGeo, brimMat);
+        brim.position.y = 1;
+
+        const topGeo = new THREE.CylinderGeometry(0, 7, 8, 6, 1, false);
+        const topMat = new THREE.MeshLambertMaterial({ color: this.colors.hat, flatShading: true });
+        const top = new THREE.Mesh(topGeo, topMat);
+        top.position.y = 6;
+
+        hatGroup.add(brim, top);
+        hatGroup.position.y = 14;
+
+        return hatGroup;
+    }
+
+    createHead() {
+        const headGeo = new THREE.SphereGeometry(3.5, 8, 8);
+        const headMat = new THREE.MeshLambertMaterial({ color: this.colors.skin, flatShading: true });
+        const head = new THREE.Mesh(headGeo, headMat);
+        head.position.y = 10;
+        return head;
+    }
+
+    createBody() {
+        const bodyGroup = new THREE.Group();
+
+        const robeGeo = new THREE.BoxGeometry(12, 16, 10, 4, 4, 4);
+        const robeMat = new THREE.MeshLambertMaterial({ color: this.colors.robe, flatShading: true });
+        this.robe = new THREE.Mesh(robeGeo, robeMat);
+        this.robe.position.y = -2;
+
+        const highlightGeo = new THREE.BoxGeometry(12.5, 16, 10.5, 4, 4, 4);
+        const highlightMat = new THREE.MeshLambertMaterial({
+            color: this.colors.robeHighlight,
+            flatShading: true,
+            transparent: true,
+            opacity: 0.3
+        });
+        const highlight = new THREE.Mesh(highlightGeo, highlightMat);
+        highlight.position.y = -2;
+
+        bodyGroup.add(this.robe, highlight);
+
+        return bodyGroup;
+    }
+
+    createArms() {
+        const armsGroup = new THREE.Group();
+
+        const armGeo = new THREE.BoxGeometry(2, 10, 2, 2, 2, 2);
+        const armMat = new THREE.MeshLambertMaterial({ color: this.colors.skin, flatShading: true });
+
+        this.leftArm = new THREE.Mesh(armGeo, armMat);
+        this.leftArm.position.set(-8, -5, 2);
+        this.leftArm.rotation.z = Math.PI * 0.1;
+
+        const rightArmGeo = new THREE.BoxGeometry(2, 10, 2, 2, 2, 2);
+        this.rightArm = new THREE.Mesh(rightArmGeo, armMat);
+        this.rightArm.position.set(8, -5, 2);
+        this.rightArm.rotation.z = -Math.PI * 0.1;
+
+        armsGroup.add(this.leftArm, this.rightArm);
+
+        return armsGroup;
+    }
+
+    createStaff() {
+        const staffGroup = new THREE.Group();
+
+        const staffGeo = new THREE.CylinderGeometry(0.4, 0.4, 22, 6, 1, false);
+        const staffMat = new THREE.MeshLambertMaterial({ color: this.colors.staff, flatShading: true });
+        this.staffMesh = new THREE.Mesh(staffGeo, staffMat);
+        this.staffMesh.position.y = -5;
+
+        const glowGeo = new THREE.CylinderGeometry(0.5, 0.5, 22, 6, 1, false);
+        const glowMat = new THREE.MeshBasicMaterial({
+            color: this.colors.magic,
+            transparent: true,
+            opacity: 0.2,
+            side: THREE.BackSide
+        });
+        this.staffGlow = new THREE.Mesh(glowGeo, glowMat);
+        this.staffGlow.position.y = -5;
+
+        const crystalGeo = new THREE.SphereGeometry(1.8, 6, 6);
+        const crystalMat = new THREE.MeshLambertMaterial({
+            color: this.colors.magic,
+            emissive: this.colors.magic,
+            emissiveIntensity: 0.6,
+            transparent: true,
+            opacity: 0.9
+        });
+        this.crystal = new THREE.Mesh(crystalGeo, crystalMat);
+        this.crystal.position.y = -16.5;
+
+        staffGroup.add(this.staffMesh, this.staffGlow, this.crystal);
+        staffGroup.position.set(7, -5, 2);
+        staffGroup.rotation.z = -Math.PI * 0.25;
+
+        return staffGroup;
+    }
+
+    createParticleSystem() {
+        this.particleGeometry = new THREE.SphereGeometry(0.4, 4, 4);
+        this.particleMaterial = new THREE.MeshBasicMaterial({
+            color: this.colors.magic,
+            transparent: true
+        });
+
+        this.particles = [];
+        for (let i = 0; i < 150; i++) {
+            const particle = new THREE.Mesh(this.particleGeometry, this.particleMaterial);
+            particle.visible = false;
+            this.particles.push({
+                mesh: particle,
+                velocity: new THREE.Vector3(0, 0, 0),
+                life: 0,
+                maxLife: 80
+            });
+            this.scene.add(particle);
+        }
+    }
+
+    setupEventListeners() {
+        window.addEventListener('resize', () => this.onResize());
+        window.addEventListener('click', () => this.castMagic());
+        window.addEventListener('touchend', () => this.castMagic());
+    }
+
+    castMagic() {
+        if (this.castTimer > 0) return;
+        this.isCasting = true;
+        this.castTimer = 180;
+
+        for (let i = 0; i < 40; i++) {
+            const p = this.particles[i];
+            const worldPos = new THREE.Vector3();
+            this.crystal.getWorldPosition(worldPos);
+            p.mesh.position.copy(worldPos);
+            p.mesh.visible = true;
+            p.velocity.set(
+                (Math.random() - 0.5) * 0.6,
+                0.1 + Math.random() * 0.4,
+                (Math.random() - 0.5) * 0.6
+            );
+            p.life = p.maxLife;
+            p.mesh.material.opacity = 0.8;
+        }
+    }
+
+    onResize() {
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    animate() {
+        requestAnimationFrame(() => this.animate());
+        this.time += 0.016;
+
+        this.camera.position.x = Math.sin(this.time * 0.05) * 40;
+        this.camera.position.z = Math.cos(this.time * 0.05) * 40;
+        this.camera.lookAt(0, 10, 0);
+
+        this.updateIdleAnimation();
+        this.updateParticles();
+
+        this.renderer.render(this.scene, this.camera);
+    }
+
+    updateIdleAnimation() {
+        const breath = Math.sin(this.time * 0.5) * 0.03;
+        this.mage.scale.set(1, 1 + breath, 1);
+
+        this.hat.rotation.y = Math.sin(this.time * 0.3) * 0.05;
+
+        this.staff.rotation.z = -Math.PI * 0.25 + Math.sin(this.time * 0.4) * 0.03;
+
+        this.leftArm.rotation.z = Math.PI * 0.1 + Math.sin(this.time * 0.3) * 0.02;
+        this.rightArm.rotation.z = -Math.PI * 0.1 - Math.sin(this.time * 0.3) * 0.02;
+
+        this.crystal.material.emissiveIntensity = 0.6 + Math.sin(this.time * 2) * 0.3;
+
+        if (this.isCasting) {
+            this.castTimer--;
+            if (this.castTimer <= 0) this.isCasting = false;
+
+            this.staff.rotation.x = Math.sin(this.time * 3) * 0.2;
+            this.staff.rotation.z = -Math.PI * 0.25 + Math.sin(this.time * 3) * 0.15;
+            this.crystal.material.emissiveIntensity = 1 + Math.sin(this.time * 4) * 0.5;
+
+            this.pointLight.intensity = 1 + Math.sin(this.time * 3) * 0.5;
+        } else {
+            this.pointLight.intensity = 1.5 + Math.sin(this.time * 0.5) * 0.1;
+        }
+    }
+
+    updateParticles() {
+        this.particles.forEach(p => {
+            if (!p.mesh.visible) return;
+            p.mesh.position.add(p.velocity);
+            p.velocity.y *= 0.97;
+            p.velocity.x *= 0.98;
+            p.velocity.z *= 0.98;
+            p.life--;
+            p.mesh.material.opacity = Math.max(0, p.life / p.maxLife * 0.8);
+            if (p.life <= 0) {
+                p.mesh.visible = false;
+            }
+        });
+    }
+}
+
+new MageLevel();
