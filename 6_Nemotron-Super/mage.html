@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Low-Poly Mage</title>
+<style>
+body { margin:0; overflow:hidden; background:#111; }
+canvas { display:block; }
+</style>
+</head>
+<body>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js';
+
+let scene, camera, renderer, clock;
+let mage, staff, particles;
+const particlesCount = 100;
+
+function init() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0a1a);
+  camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
+  camera.position.set(0, 2, 5);
+  renderer = new THREE.WebGLRenderer({ antialias:true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  // Lights
+  const hemi = new THREE.HemisphereLight(0x8b00ff, 0x00ffff, 1.2);
+  scene.add(hemi);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+  dir.position.set(5, 10, 7);
+  scene.add(dir);
+
+  // Floor
+  const floorGeo = new THREE.PlaneGeometry(20,20);
+  const floorMat = new THREE.MeshStandardMaterial({color:0x222, side:THREE.DoubleSide});
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI/2;
+  scene.add(floor);
+
+  // Mage body (robe)
+  const robeGeo = new THREE.CylinderGeometry(0.6,0.8,1.8,8);
+  const robeMat = new THREE.MeshStandardMaterial({color:0x6a0dad}); // purple
+  const robe = new THREE.Mesh(robeGeo, robeMat);
+  robe.position.y = 0.9;
+  // Head
+  const headGeo = new THREE.SphereGeometry(0.3,8,8);
+  const headMat = new THREE.MeshStandardMaterial({color:0xffdbac});
+  const head = new THREE.Mesh(headGeo, headMat);
+  head.position.y = 2.0;
+  // Hat
+  const hatGeo = new THREE.ConeGeometry(0.4,0.7,8);
+  const hatMat = new THREE.MeshStandardMaterial({color:0x4b0082});
+  const hat = new THREE.Mesh(hatGeo, hatMat);
+  hat.position.y = 2.4;
+  // Staff
+  const staffGeo = new THREE.CylinderGeometry(0.05,0.05,2.0,8);
+  const staffMat = new THREE.MeshStandardMaterial({color:0x8b4513});
+  staff = new THREE.Mesh(staffGeo, staffMat);
+  staff.position.set(0.6,1.0,0);
+  staff.rotation.z = Math.PI/6;
+  // Staff tip glow
+  const tipGeo = new THREE.SphereGeometry(0.08,6,6);
+  const tipMat = new THREE.MeshStandardMaterial({color:0x00ffff, emissive:0x00ffff, emissiveIntensity:0.5});
+  const tip = new THREE.Mesh(tipGeo, tipMat);
+  tip.position.set(0.6,2.0,0);
+  staff.add(tip);
+
+  mage = new THREE.Group();
+  mage.add(robe, head, hat, staff);
+  scene.add(mage);
+
+  // Particle system for magic
+  const particlesGeo = new THREE.BufferGeometry();
+  const positions = new Float32Array(particlesCount * 3);
+  for(let i=0;i<particlesCount;i++){
+    positions[i*3] = (Math.random()-0.5)*0.2;
+    positions[i*3+1] = Math.random()*0.2;
+    positions[i*3+2] = (Math.random()-0.5)*0.2;
+  }
+  particlesGeo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+  const particlesMat = new THREE.PointsMaterial({
+    color:0x00ffff,
+    size:0.05,
+    transparent:true,
+    opacity:0.8
+  });
+  particles = new THREE.Points(particlesGeo, particlesMat);
+  particles.visible = false;
+  scene.add(particles);
+
+  clock = new THREE.Clock();
+  animate();
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+  // Idle: breathing + staff sway
+  const breath = Math.sin(t*1.5)*0.02;
+  mage.scale.y = 1 + breath;
+  mage.position.y = 0.9 + breath*0.5;
+  staff.rotation.z = Math.PI/6 + Math.sin(t*0.8)*0.1;
+  // Hat wobble
+  mage.children[2].rotation.z = Math.sin(t*0.5)*0.05;
+  renderer.render(scene, camera);
+}
+
+// Magic cast triggered on click
+window.addEventListener('click',()=>{
+  particles.visible = true;
+  // reset positions to staff tip
+  const pos = particles.geometry.attributes.position;
+  const tipPos = new THREE.Vector3(0.6,2.0,0).applyMatrix4(staff.matrixWorld);
+  for(let i=0;i<particlesCount;i++){
+    pos.setXYZ(i,
+      tipPos.x + (Math.random()-0.5)*0.3,
+      tipPos.y + Math.random()*0.5,
+      tipPos.z + (Math.random()-0.5)*0.3
+    );
+  }
+  pos.needsUpdate = true;
+  // fade out
+  const start = performance.now();
+  function fade(){
+    const elapsed = performance.now() - start;
+    if(elapsed>800){ particles.visible=false; return;}
+    particles.material.opacity = 0.8*(1-elapsed/800);
+    requestAnimationFrame(fade);
+  }
+  fade();
+});
+
+function onResize(){
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+window.addEventListener('resize', onResize);
+init();
+</script>
+</body>
+</html>

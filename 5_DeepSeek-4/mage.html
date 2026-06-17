@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>Low-Poly Mage</title>
+<style>
+  * { margin: 0; padding: 0; }
+  body { overflow: hidden; background: #0a0a1a; font-family: monospace; }
+  canvas { display: block; }
+  #info {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    color: rgba(0,255,255,0.5); font-size: 14px;
+    pointer-events: none; text-align: center;
+    text-shadow: 0 0 8px rgba(0,255,255,0.3);
+    letter-spacing: 2px;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="info">CLICK ANYWHERE TO CAST MAGIC</div>
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js";
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a1a);
+scene.fog = new THREE.Fog(0x0a0a1a, 8, 18);
+
+const camera = new THREE.PerspectiveCamera(40, window.innerWidth/window.innerHeight, 0.1, 30);
+camera.position.set(0, 2.5, 6);
+camera.lookAt(0, 1.5, 0);
+
+// ── Lighting ──────────────────────────────────────────────
+const ambient = new THREE.AmbientLight(0x222244, 0.6);
+scene.add(ambient);
+
+const hemi = new THREE.HemisphereLight(0x6644aa, 0x222244, 0.8);
+scene.add(hemi);
+
+const key = new THREE.DirectionalLight(0xccaaff, 1.2);
+key.position.set(4, 8, 6);
+key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024);
+key.shadow.camera.near = 0.5;
+key.shadow.camera.far = 20;
+key.shadow.camera.left = -6;
+key.shadow.camera.right = 6;
+key.shadow.camera.top = 6;
+key.shadow.camera.bottom = -6;
+scene.add(key);
+
+const fill = new THREE.DirectionalLight(0x4444ff, 0.4);
+fill.position.set(-3, 2, -4);
+scene.add(fill);
+
+const rim = new THREE.DirectionalLight(0x00ffff, 0.6);
+rim.position.set(-2, 1, 5);
+scene.add(rim);
+
+const glowLight = new THREE.PointLight(0x00ffff, 0, 3);
+glowLight.position.set(0, 2.8, 0);
+scene.add(glowLight);
+
+// ── Floor ─────────────────────────────────────────────────
+const floorGeo = new THREE.PlaneGeometry(14, 14, 1, 1);
+const floorMat = new THREE.MeshStandardMaterial({
+  color: 0x1a1a2e,
+  roughness: 0.8,
+  metalness: 0.1,
+  side: THREE.DoubleSide,
+});
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -0.01;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// Grid helper circles
+const gridCircle = (radius, color, y) => {
+  const pts = [];
+  const segs = 32;
+  for (let i = 0; i <= segs; i++) {
+    const a = (i / segs) * Math.PI * 2;
+    pts.push(new THREE.Vector3(Math.cos(a) * radius, 0, Math.sin(a) * radius));
+  }
+  const g = new THREE.BufferGeometry().setFromPoints(pts);
+  const m = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.15 });
+  const line = new THREE.Line(g, m);
+  line.position.y = y;
+  return line;
+};
+scene.add(gridCircle(3.5, 0x6644aa, 0.001));
+scene.add(gridCircle(2.5, 0x00ffff, 0.001));
+scene.add(gridCircle(1.5, 0x6644aa, 0.001));
+
+// ── Color Palette ─────────────────────────────────────────
+const C = {
+  skin:     0xd4a574,
+  skinDark: 0xb8855a,
+  robe:     0x4a1a6b,
+  robeDark: 0x2e0a45,
+  robeTrim: 0x7b2d8e,
+  hat:      0x2a004d,
+  hatBand:  0x6b2fa0,
+  staff:    0x8b6b4b,
+  staffTip: 0x00ffff,
+  gem:      0x00ffff,
+  eye:      0xffffff,
+  pupil:    0x111122,
+  glow:     0x00ffff,
+};
+
+const flatMat = (color, emissive=0x000000, emissiveIntensity=0) =>
+  new THREE.MeshStandardMaterial({
+    color, emissive, emissiveIntensity,
+    roughness: 0.6, metalness: 0.05,
+    flatShading: true,
+  });
+
+// ── Build Mage ────────────────────────────────────────────
+const mage = new THREE.Group();
+mage.position.y = 0;
+scene.add(mage);
+
+// --- Body (robe) ---
+const bodyGeo = new THREE.CylinderGeometry(0.65, 1.05, 1.8, 6, 1);
+const body = new THREE.Mesh(bodyGeo, flatMat(C.robe));
+body.position.y = 0.9;
+body.castShadow = true;
+mage.add(body);
+
+// Robe lower flare
+const skirtGeo = new THREE.CylinderGeometry(0.7, 1.3, 0.8, 6, 1);
+const skirt = new THREE.Mesh(skirtGeo, flatMat(C.robeDark));
+skirt.position.y = 0.25;
+skirt.castShadow = true;
+mage.add(skirt);
+
+// Robe trim
+const trimGeo = new THREE.TorusGeometry(0.65, 0.04, 4, 8);
+const trim = new THREE.Mesh(trimGeo, flatMat(C.robeTrim));
+trim.position.y = 1.7;
+trim.rotation.x = Math.PI / 2;
+mage.add(trim);
+
+// --- Head ---
+const headGeo = new THREE.DodecahedronGeometry(0.45, 0);
+const head = new THREE.Mesh(headGeo, flatMat(C.skin));
+head.position.y = 2.0;
+head.castShadow = true;
+mage.add(head);
+
+// Jaw (lower head extension)
+const jawGeo = new THREE.BoxGeometry(0.5, 0.2, 0.45);
+const jaw = new THREE.Mesh(jawGeo, flatMat(C.skinDark));
+jaw.position.set(0, 1.78, 0.05);
+mage.add(jaw);
+
+// Eyes
+const eyeMat = new THREE.MeshStandardMaterial({ color: C.eye, flatShading: true });
+const pupilMat = new THREE.MeshStandardMaterial({ color: C.pupil, flatShading: true });
+
+const eyePositions = [[-0.2, 2.1, 0.4], [0.2, 2.1, 0.4]];
+for (const pos of eyePositions) {
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), eyeMat);
+  eye.position.set(pos[0], pos[1], pos[2]);
+  mage.add(eye);
+  const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 6), pupilMat);
+  pupil.position.set(pos[0], pos[1], pos[2] + 0.06);
+  mage.add(pupil);
+}
+
+// --- Hat ---
+const hatGeo = new THREE.ConeGeometry(0.7, 1.2, 5, 1);
+const hat = new THREE.Mesh(hatGeo, flatMat(C.hat));
+hat.position.y = 2.5;
+hat.castShadow = true;
+mage.add(hat);
+
+// Hat brim
+const brimGeo = new THREE.CylinderGeometry(0.82, 0.82, 0.06, 8);
+const brim = new THREE.Mesh(brimGeo, flatMat(C.hat));
+brim.position.y = 2.05;
+mage.add(brim);
+
+// Hat band
+const bandGeo = new THREE.TorusGeometry(0.7, 0.04, 4, 8);
+const band = new THREE.Mesh(bandGeo, flatMat(C.hatBand));
+band.position.y = 2.2;
+band.rotation.x = Math.PI / 2;
+mage.add(band);
+
+// Hat tip gem
+const gemGeo = new THREE.OctahedronGeometry(0.06, 0);
+const gem = new THREE.Mesh(gemGeo, flatMat(C.gem, C.gem, 0.6));
+gem.position.y = 3.1;
+mage.add(gem);
+
+// --- Arms ---
+const armGeo = new THREE.CylinderGeometry(0.12, 0.15, 0.7, 4, 1);
+
+// Left arm
+const leftArm = new THREE.Mesh(armGeo, flatMat(C.robe));
+leftArm.position.set(-0.7, 1.5, 0);
+leftArm.rotation.z = 0.2;
+leftArm.rotation.x = -0.3;
+leftArm.castShadow = true;
+mage.add(leftArm);
+
+// Left hand
+const handGeo = new THREE.SphereGeometry(0.1, 4, 4);
+const leftHand = new THREE.Mesh(handGeo, flatMat(C.skin));
+leftHand.position.set(-0.95, 1.2, -0.2);
+mage.add(leftHand);
+
+// Right arm
+const rightArm = new THREE.Mesh(armGeo, flatMat(C.robe));
+rightArm.position.set(0.7, 1.5, 0);
+rightArm.rotation.z = -0.2;
+rightArm.rotation.x = 0.3;
+rightArm.castShadow = true;
+mage.add(rightArm);
+
+// Right hand
+const rightHand = new THREE.Mesh(handGeo, flatMat(C.skin));
+rightHand.position.set(0.95, 1.2, 0.2);
+mage.add(rightHand);
+
+// --- Staff ---
+const staffGroup = new THREE.Group();
+staffGroup.position.set(0.95, 0.6, 0.35);
+staffGroup.rotation.z = -3.8;
+mage.add(staffGroup);
+
+// Staff pole
+const poleGeo = new THREE.CylinderGeometry(0.035, 0.05, 2.8, 5);
+const pole = new THREE.Mesh(poleGeo, flatMat(C.staff));
+pole.position.y = 1.4;
+pole.castShadow = true;
+staffGroup.add(pole);
+
+// Staff knots
+for (let i = 0; i < 3; i++) {
+  const knot = new THREE.Mesh(
+    new THREE.TorusGeometry(0.06, 0.025, 4, 6),
+    flatMat(C.staff)
+  );
+  knot.position.y = 0.3 + i * 0.8;
+  knot.rotation.x = Math.PI / 2;
+  staffGroup.add(knot);
+}
+
+// Staff top gem
+const staffGem = new THREE.Mesh(
+  new THREE.OctahedronGeometry(0.12, 0),
+  flatMat(C.staffTip, C.staffTip, 0.8)
+);
+staffGem.position.y = 2.8;
+staffGroup.add(staffGem);
+
+// Staff gem glow ring
+const ringGeo = new THREE.TorusGeometry(0.15, 0.015, 4, 8);
+const ring = new THREE.Mesh(ringGeo, flatMat(C.staffTip, C.staffTip, 0.4));
+ring.position.y = 2.7;
+ring.rotation.x = Math.PI / 2;
+staffGroup.add(ring);
+
+// Small orbiting rings around staff gem
+const orbRing = new THREE.Mesh(
+  new THREE.TorusGeometry(0.22, 0.01, 4, 8),
+  flatMat(C.staffTip, C.staffTip, 0.3)
+);
+orbRing.position.y = 2.8;
+orbRing.rotation.x = Math.PI / 3;
+staffGroup.add(orbRing);
+
+// ── Particle System ───────────────────────────────────────
+const PARTICLE_COUNT = 300;
+const particleGeo = new THREE.SphereGeometry(0.025, 4, 4);
+const particleMat = new THREE.MeshBasicMaterial({
+  color: C.glow,
+  transparent: true,
+  opacity: 0.9,
+});
+const particles = [];
+const particlesGroup = new THREE.Group();
+scene.add(particlesGroup);
+
+function spawnParticle() {
+  const mesh = new THREE.Mesh(particleGeo, particleMat);
+  // Start at staff gem world position
+  const staffWorldPos = new THREE.Vector3();
+  staffGem.getWorldPosition(staffWorldPos);
+  mesh.position.copy(staffWorldPos);
+  const dir = new THREE.Vector3(
+    (Math.random() - 0.5) * 0.6,
+    Math.random() * 0.4 + 0.1,
+    (Math.random() - 0.5) * 0.6
+  ).normalize().multiplyScalar(0.8 + Math.random() * 0.8);
+  mesh.userData.vel = dir;
+  mesh.userData.life = 1.0 + Math.random() * 0.8;
+  mesh.userData.decay = 0.008 + Math.random() * 0.012;
+  mesh.userData.startY = mesh.position.y;
+  mesh.material = particleMat.clone();
+  const hue = 0.5 + Math.random() * 0.15; // cyan to blue
+  mesh.material.color.setHSL(hue, 1, 0.5 + Math.random() * 0.3);
+  particlesGroup.add(mesh);
+  particles.push(mesh);
+}
+
+// Pre-populate
+const staffWorldPos = new THREE.Vector3();
+staffGem.getWorldPosition(staffWorldPos);
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+  const mesh = new THREE.Mesh(particleGeo, particleMat.clone());
+  mesh.position.copy(staffWorldPos);
+  mesh.position.x += (Math.random() - 0.5) * 2;
+  mesh.position.y += Math.random() * 2;
+  mesh.position.z += (Math.random() - 0.5) * 2;
+  const dir = new THREE.Vector3(
+    (Math.random() - 0.5) * 0.3,
+    Math.random() * 0.3 + 0.05,
+    (Math.random() - 0.5) * 0.3
+  ).normalize().multiplyScalar(0.2 + Math.random() * 0.3);
+  mesh.userData.vel = dir;
+  mesh.userData.life = Math.random() * 0.5;
+  mesh.userData.decay = 0.006 + Math.random() * 0.01;
+  const hue = 0.5 + Math.random() * 0.15;
+  mesh.material.color.setHSL(hue, 1, 0.5 + Math.random() * 0.3);
+  mesh.material.transparent = true;
+  mesh.material.opacity = 0.3;
+  particlesGroup.add(mesh);
+  particles.push(mesh);
+}
+
+let casting = false;
+let castTimer = 0;
+
+canvas.addEventListener('click', () => {
+  casting = true;
+  castTimer = 0;
+});
+
+// ── Animation ─────────────────────────────────────────────
+const clock = new THREE.Clock();
+const tempVec = new THREE.Vector3();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  const t = clock.getElapsedTime();
+
+  // ── Idle Animation ──
+  // Breathing: subtle scale and y offset
+  const breath = Math.sin(t * 2.2) * 0.008;
+  const breathScale = 1 + Math.sin(t * 2.2) * 0.006;
+  mage.position.y = breath;
+  mage.scale.set(breathScale, breathScale, breathScale);
+
+  // Subtle body sway
+  mage.rotation.z = Math.sin(t * 0.8) * 0.01;
+
+  // Staff idle sway
+  staffGroup.rotation.z = -3.8 + Math.sin(t * 1.2) * 0.03;
+  staffGroup.rotation.x = Math.sin(t * 0.9) * 0.015;
+
+  // Head slight movement
+  head.rotation.z = Math.sin(t * 1.5) * 0.02;
+  head.rotation.x = Math.sin(t * 1.1) * 0.01;
+
+  // Hat bounce
+  hat.position.y = 2.5 + Math.sin(t * 2.2) * 0.005;
+
+  // Staff gem pulse
+  staffGem.material.emissiveIntensity = 0.5 + Math.sin(t * 3) * 0.4;
+  ring.material.emissiveIntensity = 0.3 + Math.sin(t * 3 + 1) * 0.3;
+  orbRing.rotation.y += dt * 1.5;
+  orbRing.rotation.x = Math.PI / 3 + Math.sin(t * 0.5) * 0.1;
+
+  // Gem at hat tip
+  gem.material.emissiveIntensity = 0.4 + Math.sin(t * 2.5 + 0.5) * 0.3;
+
+  // Arm sway
+  leftArm.rotation.x = -0.3 + Math.sin(t * 1.8) * 0.03;
+  rightArm.rotation.x = 0.3 + Math.sin(t * 1.8 + Math.PI) * 0.03;
+
+  // ── Casting Logic ──
+  if (casting) {
+    castTimer += dt;
+    glowLight.intensity = 2 + Math.sin(t * 20) * 1;
+    staffGem.material.emissiveIntensity = 1 + Math.sin(t * 20) * 0.5;
+
+    // Spawn burst particles
+    const spawnRate = Math.min(15, 8 + castTimer * 30);
+    for (let i = 0; i < spawnRate; i++) {
+      spawnParticle();
+    }
+
+    if (castTimer > 1.5) {
+      casting = false;
+      glowLight.intensity = 0;
+    }
+  } else {
+    glowLight.intensity = Math.max(0, glowLight.intensity - dt * 2);
+  }
+
+  // ── Update Particles ──
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.userData.life -= p.userData.decay;
+    p.position.add(p.userData.vel.clone().multiplyScalar(dt * 2));
+
+    // Slow down and fade
+    p.userData.vel.multiplyScalar(0.995);
+    p.material.opacity = Math.min(1, p.userData.life * 1.5);
+    p.scale.setScalar(Math.min(1, p.userData.life * 1.5));
+
+    if (p.userData.life <= 0) {
+      particlesGroup.remove(p);
+      p.material.dispose();
+      particles.splice(i, 1);
+    }
+  }
+
+  // Keep base number of particles
+  if (!casting && particles.length < PARTICLE_COUNT) {
+    for (let i = particles.length; i < PARTICLE_COUNT; i++) {
+      spawnParticle();
+    }
+  }
+
+  // ── Camera orbit ──
+  const camAngle = t * 0.08;
+  camera.position.x = Math.sin(camAngle) * 5.5;
+  camera.position.z = Math.cos(camAngle) * 5.5;
+  camera.lookAt(0, 1.5, 0);
+
+  renderer.render(scene, camera);
+}
+
+// ── Resize ────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+animate();
+</script>
+</body>
+</html>

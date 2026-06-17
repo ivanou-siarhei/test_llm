@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Growing Plant</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+svg { width: 100vmin; height: 100vmin; }
+</style>
+</head>
+<body>
+<svg id="scene" viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0f0c29"/>
+      <stop offset="50%" stop-color="#302b63"/>
+      <stop offset="100%" stop-color="#24243e"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="100%" r="60%">
+      <stop offset="0%" stop-color="#4a7c59" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+    <linearGradient id="stemGrad" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#2d5a27"/>
+      <stop offset="100%" stop-color="#4a8c3f"/>
+    </linearGradient>
+    <linearGradient id="leafGrad1" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2d6a2e"/>
+      <stop offset="100%" stop-color="#6abf69"/>
+    </linearGradient>
+    <linearGradient id="leafGrad2" x1="1" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#2d6a2e"/>
+      <stop offset="100%" stop-color="#6abf69"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="600" fill="url(#sky)"/>
+  <rect width="600" height="600" fill="url(#glow)"/>
+  <ellipse cx="300" cy="580" rx="300" ry="40" fill="#1a3a1a" opacity="0.5"/>
+  <g id="plant"></g>
+  <ellipse cx="300" cy="595" rx="320" ry="25" fill="#2a1a0a"/>
+</svg>
+<script>
+const SVG_NS = "http://www.w3.org/2000/svg";
+const CYCLE = 7000;
+const STEM_SEGS = 24;
+const MAX_H = 340;
+const BASE_X = 300, BASE_Y = 570;
+
+const plant = document.getElementById("plant");
+
+function el(tag, attrs) {
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  return e;
+}
+
+const stemPath = el("path", { fill: "none", stroke: "url(#stemGrad)", "stroke-width": "5", "stroke-linecap": "round" });
+plant.appendChild(stemPath);
+
+const stemTip = el("circle", { r: "3", fill: "#5a9c4a" });
+plant.appendChild(stemTip);
+
+const leaves = [];
+const LEAF_DEFS = [
+  { t: 0.22, side: -1, size: 38, angle: -40 },
+  { t: 0.30, side:  1, size: 42, angle:  35 },
+  { t: 0.42, side: -1, size: 48, angle: -45 },
+  { t: 0.52, side:  1, size: 52, angle:  40 },
+  { t: 0.62, side: -1, size: 44, angle: -50 },
+  { t: 0.72, side:  1, size: 46, angle:  45 },
+  { t: 0.82, side: -1, size: 36, angle: -55 },
+  { t: 0.90, side:  1, size: 34, angle:  50 },
+];
+
+for (const ld of LEAF_DEFS) {
+  const g = el("g", {});
+  const path = el("path", { fill: ld.side > 0 ? "url(#leafGrad1)" : "url(#leafGrad2)", stroke: "#2a5a2a", "stroke-width": "0.5" });
+  const vein = el("path", { fill: "none", stroke: "#2d5a27", "stroke-width": "0.7", opacity: "0.5" });
+  g.appendChild(path);
+  g.appendChild(vein);
+  plant.appendChild(g);
+  leaves.push({ ...ld, g, path, vein });
+}
+
+function spring(t) {
+  return 1 - Math.pow(Math.E, -6 * t) * Math.cos(t * 12);
+}
+
+function easeOut(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function getStemPoints(h, time) {
+  const pts = [];
+  for (let i = 0; i <= STEM_SEGS; i++) {
+    const frac = i / STEM_SEGS;
+    const y = BASE_Y - h * frac;
+    const windPhase = frac * 2.5 + time * 0.002;
+    const windAmp = frac * frac * 12;
+    const wind = Math.sin(windPhase) * windAmp + Math.sin(windPhase * 1.7 + 1.3) * windAmp * 0.4;
+    const growthOsc = frac > 0.85 ? Math.sin(time * 0.005 + frac * 10) * (frac - 0.85) * 8 : 0;
+    pts.push({ x: BASE_X + wind + growthOsc, y });
+  }
+  return pts;
+}
+
+function catmullRom(pts) {
+  let d = `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(i - 1, 0)];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[Math.min(i + 2, pts.length - 1)];
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+  }
+  return d;
+}
+
+function leafShape(size, unfurl) {
+  const s = size * Math.max(0, unfurl);
+  const mx = s * 0.45;
+  const my = s * 0.12;
+  return `M0,0 C${mx * 0.6},-${my} ${mx * 0.9},-${s * 0.35} ${s * 0.1},-${s * 0.5} C${s * 0.05},-${s * 0.55} -${s * 0.02},-${s * 0.52} -${s * 0.08},-${s * 0.45} C-${mx * 0.9},-${s * 0.35} -${mx * 0.6},-${my} 0,0 Z`;
+}
+
+function veinPath(size, unfurl) {
+  const s = size * Math.max(0, unfurl);
+  if (s < 2) return "";
+  let d = `M0,0 Q${s * 0.02},-${s * 0.25} ${s * 0.05},-${s * 0.45}`;
+  for (let i = 1; i <= 3; i++) {
+    const vf = i / 4;
+    const vy = -s * vf * 0.4;
+    const vx = s * 0.05 * (1 - vf);
+    const vlen = s * 0.18 * (1 - vf * 0.5);
+    d += ` M${vx.toFixed(1)},${vy.toFixed(1)} l${vlen.toFixed(1)},-${(vlen * 0.3).toFixed(1)}`;
+    d += ` M${vx.toFixed(1)},${vy.toFixed(1)} l-${vlen.toFixed(1)},-${(vlen * 0.3).toFixed(1)}`;
+  }
+  return d;
+}
+
+function update(now) {
+  const cycleT = (now % CYCLE) / CYCLE;
+
+  const stemGrowStart = 0;
+  const stemGrowEnd = 0.55;
+  const stemFadeStart = 0.82;
+  const stemFadeEnd = 1.0;
+
+  let stemProgress, plantOpacity;
+  if (cycleT < stemGrowEnd) {
+    stemProgress = easeOut(Math.min(1, (cycleT - stemGrowStart) / (stemGrowEnd - stemGrowStart)));
+    plantOpacity = 1;
+  } else if (cycleT < stemFadeStart) {
+    stemProgress = 1;
+    plantOpacity = 1;
+  } else {
+    stemProgress = 1;
+    plantOpacity = 1 - easeOut((cycleT - stemFadeStart) / (stemFadeEnd - stemFadeStart));
+  }
+
+  const h = MAX_H * stemProgress;
+  const pts = getStemPoints(h, now);
+  stemPath.setAttribute("d", catmullRom(pts));
+  stemPath.setAttribute("stroke-width", Math.max(2, 5 - stemProgress * 1.5).toFixed(1));
+
+  const tip = pts[pts.length - 1];
+  stemTip.setAttribute("cx", tip.x.toFixed(1));
+  stemTip.setAttribute("cy", tip.y.toFixed(1));
+  const tipScale = stemProgress < 1 ? spring(stemProgress * 2.5) * 0.5 + 0.5 : 0.3;
+  stemTip.setAttribute("r", (3 * tipScale).toFixed(1));
+
+  for (const lf of leaves) {
+    const leafAppear = lf.t * stemGrowEnd;
+    const leafEnd = leafAppear + 0.15;
+    const leafUnfurlEnd = leafEnd + 0.12;
+
+    let unfurl = 0;
+    if (cycleT >= leafAppear) {
+      if (cycleT < leafEnd) {
+        unfurl = 0.05 + 0.95 * (cycleT - leafAppear) / (leafEnd - leafAppear);
+      } else if (cycleT < leafUnfurlEnd) {
+        const uf = (cycleT - leafEnd) / (leafUnfurlEnd - leafEnd);
+        unfurl = 1 + (spring(uf) - 1) * 0.2;
+      } else if (cycleT < stemFadeStart) {
+        unfurl = 1;
+      } else {
+        unfurl = 1;
+      }
+    }
+
+    const segIdx = Math.min(Math.floor(lf.t * STEM_SEGS * stemProgress), pts.length - 1);
+    if (segIdx < 1 || unfurl <= 0) {
+      lf.g.setAttribute("opacity", "0");
+      continue;
+    }
+
+    lf.g.setAttribute("opacity", (plantOpacity * Math.min(1, unfurl * 5)).toFixed(2));
+
+    const p = pts[segIdx];
+    const pPrev = pts[Math.max(0, segIdx - 1)];
+    const stemAngle = Math.atan2(p.x - pPrev.x, pPrev.y - p.y) * 180 / Math.PI;
+
+    const windOsc = Math.sin(now * 0.003 + lf.t * 7 + lf.side * 2) * 8 * Math.min(1, unfurl);
+    const windOsc2 = Math.sin(now * 0.005 + lf.t * 11 + lf.side) * 4 * Math.min(1, unfurl);
+
+    const totalAngle = lf.angle + stemAngle + windOsc + windOsc2;
+
+    lf.g.setAttribute("transform", `translate(${p.x.toFixed(1)},${p.y.toFixed(1)}) rotate(${totalAngle.toFixed(1)}) scale(${lf.side > 0 ? 1 : -1},1)`);
+    lf.path.setAttribute("d", leafShape(lf.size, unfurl));
+    lf.vein.setAttribute("d", veinPath(lf.size, unfurl));
+  }
+
+  requestAnimationFrame(update);
+}
+
+requestAnimationFrame(update);
+</script>
+</body>
+</html>
